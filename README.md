@@ -61,3 +61,29 @@ consistent across most distributions. Quick local references: `man hier` and `ls
 - **Config vs data vs binaries:** rule of thumb — config in `/etc`, changing data in `/var`, programs in `/usr`.
 
 **References:** `man hier` · [FHS 3.0 spec (Linux Foundation)](https://refspecs.linuxfoundation.org/FHS_3.0/fhs/index.html)
+
+### Finding the right command — `apropos`
+
+When you know *what* you want to do but not the command's name, `apropos` searches
+the short descriptions of every man page for a keyword (equivalent to `man -k`).
+
+```bash
+apropos <keyword>
+```
+
+Example:
+
+```bash
+$ apropos sudo
+sudo (8)        - execute a command as another user
+sudoers (5)     - default sudo security policy plugin
+sudoreplay (8)  - replay sudo session logs
+visudo (8)      - edit the sudoers file
+```
+
+The number in parentheses is the man section (1 = user commands, 5 = file formats,
+8 = admin commands), so you can then run e.g. `man 5 sudoers`.
+
+**Tip:** to decode a long or unfamiliar command, paste it into
+[explainshell.com](https://explainshell.com/) — it breaks the command apart and
+explains each flag.
