@@ -87,3 +87,49 @@ The number in parentheses is the man section (1 = user commands, 5 = file format
 **Tip:** to decode a long or unfamiliar command, paste it into
 [explainshell.com](https://explainshell.com/) — it breaks the command apart and
 explains each flag.
+
+### System enumeration / info-gathering
+
+First things to run when landing on an unfamiliar Linux box — who am I, what is
+this machine, what's it running, how is it networked. Most are pre-installed.
+(Same skills used when reviewing a system's security posture.) Add `-h`/`--help`/`man`
+to any of them for options.
+
+**Identity & system**
+
+| Command | What it tells you | Handy form |
+|---------|-------------------|-----------|
+| `whoami` | Current username | |
+| `id` | Your UID/GID and group memberships | |
+| `hostname` | The system's host name | |
+| `uname` | OS / kernel / hardware info | `uname -a` (everything) |
+| `pwd` | Current working directory | |
+| `env` | Environment variables (or run a cmd in a modified env) | |
+
+**Networking**
+
+| Command | What it tells you | Handy form |
+|---------|-------------------|-----------|
+| `ip` | Interfaces, addresses, routes (modern) | `ip a`, `ip r` |
+| `ifconfig` | Interface addresses/config (legacy, `net-tools`) | |
+| `ss` | Open sockets / listening ports (modern) | `ss -tulpn` |
+| `netstat` | Connections, routing, stats (legacy) | `netstat -tulpn` |
+
+> Note: `ip` and `ss` are the modern replacements for the older `ifconfig` and
+> `netstat` (which aren't installed by default on many newer distros).
+
+**Processes & sessions**
+
+| Command | What it tells you | Handy form |
+|---------|-------------------|-----------|
+| `ps` | Running processes | `ps aux` |
+| `who` | Who is currently logged in | |
+
+**Hardware & devices**
+
+| Command | What it tells you |
+|---------|-------------------|
+| `lsblk` | Block devices (disks/partitions) as a tree |
+| `lsusb` | Connected USB devices |
+| `lspci` | PCI devices (GPU, NIC, controllers) |
+| `lsof` | Open files — and the processes/sockets using them |
