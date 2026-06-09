@@ -1,12 +1,7 @@
 # notes
 
-My personal knowledge dump — commands, concepts, gotchas, and things I learn.
-Unstructured on purpose: dump first, organize later. Anything that grows too big
-gets split out into its own file/folder down the line.
-
+My personal knowledge dump 
 ---
-
-## Kubernetes
 
 ## Linux
 
@@ -66,13 +61,3 @@ consistent across most distributions. Quick local references: `man hier` and `ls
 - **Config vs data vs binaries:** rule of thumb — config in `/etc`, changing data in `/var`, programs in `/usr`.
 
 **References:** `man hier` · [FHS 3.0 spec (Linux Foundation)](https://refspecs.linuxfoundation.org/FHS_3.0/fhs/index.html)
-
-## Networking
-
-## Security / Blue team
-
-## Azure / Cloud
-
-## Tools
-
-## TIL (today I learned)
