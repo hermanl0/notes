@@ -157,3 +157,15 @@ $ stat /etc/hosts
   Size: 220       Blocks: 8    IO Block: 4096  regular file
 Device: fd01h    Inode: 131073   Links: 1
 ```
+
+### Sorting files by modification time
+
+`ls -t` sorts by last-modified (newest first); pair with `-l` for the long listing.
+
+```bash
+ls -lt        # newest first
+ls -ltr       # oldest first (reverse) — handy: newest ends up at the bottom, next to your prompt
+ls -lt --time-style=long-iso   # explicit YYYY-MM-DD HH:MM timestamps
+```
+
+Related sort flags: `-S` (by size), `-X` (by extension), `-r` (reverse any sort), `-u` (use access time instead of modified time).
