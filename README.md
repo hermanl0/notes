@@ -133,3 +133,27 @@ to any of them for options.
 | `lsusb` | Connected USB devices |
 | `lspci` | PCI devices (GPU, NIC, controllers) |
 | `lsof` | Open files — and the processes/sockets using them |
+
+### Finding a file's inode number
+
+Every file has an **inode** — a data structure holding metadata (permissions,
+ownership, timestamps, size, block locations). The filename is just a pointer to
+the inode. Two filenames can share an inode (hard links).
+
+```bash
+ls -i filename       # inode number only
+ls -li               # long listing with inode numbers
+stat filename        # full inode detail
+```
+
+Example:
+
+```bash
+$ ls -i /etc/hosts
+131073 /etc/hosts
+
+$ stat /etc/hosts
+  File: /etc/hosts
+  Size: 220       Blocks: 8    IO Block: 4096  regular file
+Device: fd01h    Inode: 131073   Links: 1
+```
