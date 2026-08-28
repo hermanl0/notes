@@ -1,8 +1,5 @@
 # notes
 
-My personal knowledge dump 
----
-
 ## Linux
 
 ### Filesystem Hierarchy Standard (FHS)
@@ -963,5 +960,268 @@ Bash line editing uses readline keybindings — worth memorising to avoid the mo
 - `Ctrl`+`Z` only *suspends* — the job is paused, not gone; `jobs` lists it, `fg` / `bg` resume it in the fore/background.
 - `Ctrl`+`S` freezes terminal output (XOFF), `Ctrl`+`Q` resumes it (XON) — worth knowing if the terminal seems to hang.
 - The delete shortcuts feed a "kill ring"; `Ctrl`+`Y` pastes the most recent kill.
+
+## Network Enumeration (Nmap)
+
+Nmap (Network Mapper) scans networks to find live hosts, open ports, services
+(name + version), and operating systems. Core capabilities: host discovery, port
+scanning, service/version detection, OS detection, and the scripting engine (NSE).
+
+### Nmap basics — syntax, scan types, port states
+
+```bash
+nmap <scan types> <options> <target>
+```
+
+Common scan techniques:
+
+| Flag | Scan | Notes |
+|------|------|-------|
+| `-sS` | TCP SYN ("half-open") | Default when root; fast, sends SYN and never finishes the handshake |
+| `-sT` | TCP connect() | Full 3-way handshake; used when not privileged |
+| `-sU` | UDP | Slower; needed for UDP services |
+| `-sA` | TCP ACK | Maps firewall rules (filtered vs unfiltered) |
+| `-sN` / `-sF` / `-sX` | Null / FIN / Xmas | Stealthy probes using unusual flag combinations |
+
+How a SYN ("half-open") scan interacts with an open port:
+
+```mermaid
+sequenceDiagram
+    participant N as Nmap
+    participant T as Target
+    N->>T: SYN
+    T-->>N: SYN-ACK
+    Note right of N: port is open
+    N->>T: RST (tears down — never completes the handshake)
+```
+
+Port states Nmap reports:
+
+| State | Meaning |
+|-------|---------|
+| `open` | A service is accepting connections (SYN → SYN-ACK) |
+| `closed` | Reachable but nothing listening (RST returned) |
+| `filtered` | No reply — a firewall is dropping/ignoring the packets |
+| `unfiltered` | Reachable but open/closed undetermined (ACK scan) |
+| `open\|filtered` | No reply; can't tell open from filtered (common with UDP) |
+
+How Nmap decides a TCP port's state:
+
+```mermaid
+flowchart TD
+    A[Send SYN to port] --> B{Response?}
+    B -->|SYN-ACK| C[open]
+    B -->|RST| D[closed]
+    B -->|no reply / ICMP unreachable| E[filtered]
+```
+
+**Notes / gotchas**
+- `-sS` needs root (raw packets); without privileges Nmap falls back to `-sT` (connect scan).
+- SYN-scan reading: SYN-ACK = open, RST = closed, no response = filtered.
+- By default (no `-p`) Nmap scans the top 1000 common TCP ports, not all 65535.
+
+### Host discovery (which hosts are alive)
+
+Find live hosts before port-scanning. `-sn` disables port scanning (ping sweep only).
+
+```bash
+sudo nmap 192.168.1.0/24 -sn -oA sweep   # ping-sweep a /24, save output
+sudo nmap -sn -iL hosts.lst              # read targets from a file
+sudo nmap -sn 192.168.1.10-20            # a range in the last octet
+sudo nmap -sn 192.168.1.10 192.168.1.11  # explicit multiple IPs
+```
+
+| Option | Meaning |
+|--------|---------|
+| `-sn` | No port scan — host discovery only |
+| `-iL <file>` | Read targets from a list |
+| `-oA <name>` | Save output in all formats (`.nmap` / `.gnmap` / `.xml`) |
+| `-PE` | Use ICMP echo requests for the ping |
+| `--packet-trace` | Show every packet sent/received |
+| `--reason` | Show why Nmap marked a host up/down |
+| `--disable-arp-ping` | Skip the ARP ping (force ICMP on a local net) |
+
+**On the local subnet Nmap discovers hosts via ARP** (who-has → reply), not ICMP —
+even with `-PE`. Use `--disable-arp-ping` to force ICMP echo. Off-subnet it falls
+back to ICMP/TCP pings.
+
+**OS fingerprinting from TTL** — the initial TTL in a reply hints at the OS:
+
+| Initial TTL | Likely OS |
+|-------------|-----------|
+| 64 | Linux / Unix / macOS |
+| 128 | Windows |
+| 255 | Cisco / network gear (and Solaris) |
+
+TTL drops by 1 per hop, so a reply near 128 (e.g. 122) started at 128 → Windows.
+
+**Notes / gotchas**
+- A ping sweep only finds hosts whose firewall answers — a "down" host may just be dropping ICMP; try TCP/UDP discovery probes if results look sparse.
+- Always save scans (`-oA`) for diffing, documentation, and reporting.
+
+### Port & service scanning
+
+After host discovery, scan ports and identify services.
+
+Selecting ports:
+
+```bash
+nmap <target> -p 22,80,443     # specific ports
+nmap <target> -p 1-1000        # a range
+nmap <target> -p-              # ALL 65535 TCP ports
+nmap <target> -F               # fast: top 100 ports
+nmap <target> --top-ports=10   # top N most common
+```
+
+Scan types & useful options:
+
+| Option | Effect |
+|--------|--------|
+| `-sS` | SYN "half-open" scan (default as root) |
+| `-sT` | TCP connect() scan (full handshake; default unprivileged; accurate but noisy/logged) |
+| `-sU` | UDP scan (slow — no handshake, long timeouts) |
+| `-sV` | Service / version detection (probes the port) |
+| `-Pn` | Skip host discovery — treat the host as up |
+| `-n` | No DNS resolution |
+| `--reason` | Show why a port is in its state |
+| `--packet-trace` | Show every packet sent/received |
+| `--max-retries <n>` | Retry count for dropped probes (default 10) |
+| `-oA <name>` | Save all output formats |
+
+How states are decided:
+- SYN-ACK → **open**; RST/ACK → **closed**.
+- Firewall **drops** packets → no reply → **filtered** (scan is slow; Nmap retries).
+- Firewall **rejects** → ICMP type 3 (unreachable) → **filtered** (fast).
+- UDP: reply → **open**; ICMP port-unreachable (type 3/code 3) → **closed**; no reply → **open|filtered**.
+
+**Notes / gotchas**
+- `-p-` (all 65535) catches services on non-standard high ports that the default top-1000 misses — run a full scan before trusting a port count.
+- UDP scans are slow (`-sU` alone can take minutes) — pair with `-sV` or a specific `-p` to keep it manageable.
+- `-sV` reveals product + version and often the host OS/hostname (e.g. `Service Info: Host:`), which feeds further enumeration.
+- `-Pn` is essential when a host blocks ping but is really up — otherwise Nmap skips it.
+
+### Saving & reporting scan output
+
+| Flag | Format | Extension |
+|------|--------|-----------|
+| `-oN` | Normal (human-readable) | `.nmap` |
+| `-oG` | Greppable (one host per line) | `.gnmap` |
+| `-oX` | XML | `.xml` |
+| `-oA <name>` | All three at once | `.nmap` / `.gnmap` / `.xml` |
+
+Turn the XML into a readable HTML report:
+
+```bash
+nmap -p- <target> -oA scan       # save all formats
+xsltproc scan.xml -o scan.html   # XML -> styled HTML report
+```
+
+**Notes / gotchas**
+- Greppable (`.gnmap`) is easy to `grep`/`awk`; XML (`.xml`) is best for tooling and the HTML report; normal (`.nmap`) is for reading.
+- `xsltproc` may need installing (`apt install xsltproc`) — it renders the XML into a clean report handy for documentation.
+
+### Banner grabbing & version detection
+
+`-sV` reads service banners to identify product + version; add depth/verbosity:
+
+```bash
+nmap -sV <target>                 # version detection
+nmap -sV --version-all <target>   # try every probe (intensity 9; slower)
+nmap -p- -sV -v <target>          # -v shows ports as they're discovered
+nmap ... --stats-every=5s         # progress every 5s (Space bar also prints status)
+```
+
+Grab a banner manually (often reveals more than `-sV` prints — distro, hostname, etc.):
+
+```bash
+nc -nv <target> <port>            # connect; many services announce a banner immediately
+```
+
+**Notes / gotchas**
+- A service sends its banner right after the handshake (a TCP PSH); `-sV` parses it, and falls back to signature probes (slower) when it can't match.
+- Manual `nc` banner-grabbing can surface details `-sV` omits — worth doing on interesting ports.
+- FTP and some daemons delay their banner while doing a reverse-DNS lookup on your IP — give `nc` 15-30s before assuming the port is silent.
+- Banners can be edited or removed by admins, so treat versions as a hint, not gospel.
+
+### Nmap Scripting Engine (NSE)
+
+NSE runs Lua scripts to interact with services (discovery, banners, vuln checks,
+brute force, etc.). Scripts fall into categories: `auth`, `broadcast`, `brute`,
+`default`, `discovery`, `dos`, `exploit`, `external`, `fuzzer`, `intrusive`,
+`malware`, `safe`, `version`, `vuln`.
+
+```bash
+nmap -sC <target>                       # run the 'default' script category
+nmap --script <category> <target>       # a whole category, e.g. --script vuln
+nmap --script <name>[,<name>] <target>  # specific scripts, e.g. banner,http-enum
+nmap -A <target>                        # aggressive: -sV + -O + --traceroute + -sC
+nmap -sV --script vuln <target>         # version + known-CVE checks (vulners, etc.)
+```
+
+Handy individual scripts:
+
+| Script | What it does |
+|--------|--------------|
+| `banner` | Grab and print each service's connect banner |
+| `http-enum` | Discover interesting web paths (admin panels, `robots.txt`, …) |
+| `http-title` | Page title of a web service |
+| `smb-os-discovery` / `smb-enum-shares` | SMB OS/hostname; list shares |
+| `ftp-anon` | Check for anonymous FTP access |
+| `smtp-commands` | List SMTP commands (can reveal users) |
+
+**Notes / gotchas**
+- `-sC` runs only the `default` category; `--script <category>` runs a whole one (some are intrusive — read the category before firing).
+- `-A` is loud (OS + version + scripts + traceroute) — fine for a known lab, noisy on a real engagement.
+- Tune scripts with args, e.g. `--script-args banner.timeout=30s` for slow banners.
+- Web recon: when `http-enum` finds a path (an admin dir, `/robots.txt`, …), fetch it (`curl`) to read the content — that's often where the interesting bits are.
+- `vulners` / vuln scripts map detected versions to CVEs — a fast way to spot known-vulnerable services.
+
+### Performance & timing
+
+Tune scan speed vs. reliability — faster scans can miss hosts/ports.
+
+| Option | Effect |
+|--------|--------|
+| `-T<0-5>` | Timing template: 0 paranoid → 3 normal (default) → 5 insane |
+| `--min-rate <n>` | Send at least n packets/sec (speeds up big scans) |
+| `--max-retries <n>` | Retries per port (default 10; `0` = don't retry) |
+| `--initial-rtt-timeout <t>` / `--max-rtt-timeout <t>` | Response wait times (e.g. `100ms`) |
+| `--min-parallelism <n>` | Probe at least n ports/hosts in parallel |
+| `--host-timeout <t>` | Give up on a host after this long |
+
+Timing templates: `-T0` paranoid, `-T1` sneaky, `-T2` polite, `-T3` normal,
+`-T4` aggressive, `-T5` insane — each bundles the manual options above.
+
+**Notes / gotchas**
+- Speed has a cost: too-low `--max-retries` or too-short RTT timeouts silently miss open ports / live hosts. Verify sparse results with a slower pass.
+- `-T4` is a common lab default (fast, usually reliable); `-T0`/`-T1` are for IDS evasion (very slow); `-T5` can overwhelm a link and get you blocked.
+- `--min-rate` shines when you know the bandwidth (white-box/whitelisted) — raises throughput without fiddling each option.
+
+### Firewall & IDS/IPS evasion
+
+Techniques to get scans past packet filters and detection.
+
+| Option | Effect |
+|--------|--------|
+| `-sA` | ACK scan — maps firewall rules (reachable → `unfiltered`, dropped → `filtered`) |
+| `-D <ip1>,ME,<ip2>` / `-D RND:5` | Decoys — hide your IP among spoofed sources |
+| `-S <ip>` | Spoof a different source IP (pair with `-e`) |
+| `-e <iface>` | Send via a specific interface (e.g. `tun0`) |
+| `-g` / `--source-port <n>` | Scan from a trusted source port (DNS 53, HTTP 80) |
+| `--dns-server <ns>` | Query a specific (e.g. internal/trusted) DNS server |
+| `-f` / `--mtu <n>` | Fragment packets to slip past simple filters |
+| `--data-length <n>` | Append random bytes to alter packet size/signature |
+| `--spoof-mac <mac>` | Spoof the source MAC address |
+
+Reading firewall behaviour:
+- Dropped packet → no reply → `filtered` (slow, retries).
+- Rejected packet → RST (TCP) or ICMP unreachable (type 3) → `filtered`/`closed` (fast).
+- `-sA` ACK scan: RST back = `unfiltered` (reachable); no reply = `filtered`.
+
+**Notes / gotchas**
+- A `filtered` port can flip to `open` when scanned from a trusted `--source-port` (e.g. 53) — some firewalls trust DNS/HTTP source ports. Confirm with `ncat --source-port 53 <ip> <port>`.
+- Decoys must be live hosts, or SYN-flood protection may black-hole the target.
+- ISPs often drop spoofed source IPs (`-S`, decoys) leaving their network — best on-net / white-box.
+- IDS/IPS is passive: aggressive scans can get your IP blocked. Slow down (`-T0`/`-T1`), use decoys, and rotate source IPs (VPS) if you're cut off.
 - `enable` only affects boot; `start` only affects now — use `enable --now` for both at once.
 - Find a unit by its description text: `systemctl list-units --type=service --all | grep -i "<text>"`.
